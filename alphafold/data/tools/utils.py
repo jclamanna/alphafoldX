@@ -16,10 +16,13 @@ import contextlib
 import shutil
 import tempfile
 import time
+import json
+import psutil
+import GPUtil
 from typing import Optional
 
 from absl import logging
-
+timings = {}
 
 @contextlib.contextmanager
 def tmpdir_manager(base_dir: Optional[str] = None):
@@ -35,6 +38,15 @@ def tmpdir_manager(base_dir: Optional[str] = None):
 def timing(msg: str):
   logging.info('Started %s', msg)
   tic = time.time()
+  val1 = psutil.cpu_percent(interval=None)
   yield
   toc = time.time()
-  logging.info('Finished %s in %.3f seconds', msg, toc - tic)
+  timings[msg] = (toc-tic) / 60
+  timings["CPU Usage For:" + msg] = psutil.cpu_percent(interval=None)
+  logging.info('Finished %s in %.3f minutes', msg, (toc - tic)/60)
+  print (timings)
+
+
+def time_dump(name):
+    with open(name+ "featureTimer.json", 'w') as f:
+      f.write(json.dumps(timings, indent=4))

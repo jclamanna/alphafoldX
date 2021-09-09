@@ -20,15 +20,16 @@ import pickle
 import random
 import sys
 import time
+# import GPUtil
 from typing import Dict
 
 from absl import app
 from absl import flags
 from absl import logging
 from alphafold.common import protein
-from alphafold.common import residue_constants
 from alphafold.data import pipeline
 from alphafold.data import templates
+from alphafold.data.tools import utils
 from alphafold.model import data
 from alphafold.model import config
 from alphafold.model import model
@@ -138,13 +139,13 @@ def predict_structure(
   plddts = {}
 
   # Run the models.
+  utils.time_dump(output_dir)
   for model_name, model_runner in model_runners.items():
     logging.info('Running model %s', model_name)
     t_0 = time.time()
     processed_feature_dict = model_runner.process_features(
         feature_dict, random_seed=random_seed)
     timings[f'process_features_{model_name}'] = time.time() - t_0
-
     t_0 = time.time()
     prediction_result = model_runner.predict(processed_feature_dict)
     t_diff = time.time() - t_0
@@ -159,22 +160,15 @@ def predict_structure(
       timings[f'predict_benchmark_{model_name}'] = time.time() - t_0
 
     # Get mean pLDDT confidence metric.
-    plddt = prediction_result['plddt']
-    plddts[model_name] = np.mean(plddt)
+    plddts[model_name] = np.mean(prediction_result['plddt'])
 
     # Save the model outputs.
     result_output_path = os.path.join(output_dir, f'result_{model_name}.pkl')
     with open(result_output_path, 'wb') as f:
       pickle.dump(prediction_result, f, protocol=4)
 
-    # Add the predicted LDDT in the b-factor column.
-    # Note that higher predicted LDDT value means higher model confidence.
-    plddt_b_factors = np.repeat(
-        plddt[:, None], residue_constants.atom_type_num, axis=-1)
-    unrelaxed_protein = protein.from_prediction(
-        features=processed_feature_dict,
-        result=prediction_result,
-        b_factors=plddt_b_factors)
+    unrelaxed_protein = protein.from_prediction(processed_feature_dict,
+                                                prediction_result)
 
     unrelaxed_pdb_path = os.path.join(output_dir, f'unrelaxed_{model_name}.pdb')
     with open(unrelaxed_pdb_path, 'w') as f:
@@ -191,6 +185,7 @@ def predict_structure(
     relaxed_output_path = os.path.join(output_dir, f'relaxed_{model_name}.pdb')
     with open(relaxed_output_path, 'w') as f:
       f.write(relaxed_pdb_str)
+    break
 
   # Rank by pLDDT and write out relaxed PDBs in rank order.
   ranked_order = []
